@@ -1,6 +1,6 @@
 # StudyOS — Functional MVP
 
-Ứng dụng học tập cá nhân với Next.js 16.4.0, React 19.3.0, TypeScript strict, Tailwind CSS 4, Radix UI/shadcn-style components và Supabase PostgreSQL/Auth.
+Ứng dụng học tập cá nhân với Next.js 16.4.0, React 19.3.0, TypeScript strict, Tailwind CSS 4, Radix UI/shadcn-style components và Supabase PostgreSQL/Auth..
 
 ## Phạm vi bản này
 
@@ -145,7 +145,7 @@ Muốn stack database local đầy đủ: cài Supabase CLI + Docker theo tài l
 
 1. Tạo repository GitHub và push source; `.env.local` không vào Git.
 2. Import repository vào Vercel, chọn framework Next.js, Node 24. Root directory là thư mục chứa `package.json`.
-3. Install command: `pnpm install --frozen-lockfile`; Build: `pnpm build`; output để mặc định Next.js.
+3. Install command: `pnpm install --frozen-lockfile`; Build: `pnpm build`; output để mặc định Next.js..
 4. Thêm hai biến môi trường Supabase cho Production/Preview cần dùng, rồi deploy.
 5. Cập nhật Site URL và Redirect URLs trên Supabase đúng HTTPS domain đã cấp.
 6. Kiểm tra đăng ký/xác nhận email, đăng nhập, reset password, tạo habit, log hôm nay, log phiên học, refresh, sửa/xóa và sign-out/sign-in.
@@ -165,5 +165,6 @@ Nguồn: https://vercel.com/docs/plans/hobby và https://supabase.com/pricing. C
 ## Bước tiếp theo
 
 Sau khi migration và acceptance flow thật qua: Course + Lessons → Books + Reading logs → Goals/Tasks → CSV import (mapping, preview, duplicate detection, confirmation) → account deletion. Giữ schema normalized và mở rộng feature theo từng mốc chạy được.
-#   s t u d y o s  
+#   s t u d y o s 
+ 
  
