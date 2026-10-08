@@ -33,6 +33,20 @@ const Habits = dynamic(() => import("@/features/habits").then((m) => m.Habits));
 const Study = dynamic(() => import("@/features/study").then((m) => m.Study));
 const Settings = dynamic(() => import("@/features/settings").then((m) => m.Settings));
 const History = dynamic(() => import("@/features/history").then((m) => m.History));
+// Preload feature chunks in idle time and on link hover/touch. This avoids a
+// first-navigation waterfall, without triggering an authenticated RSC request.
+function preloadFeature(section: string) {
+  let task: Promise<unknown>;
+  switch (section) {
+    case "dashboard": case "analytics": task = import("@/features/dashboard"); break;
+    case "habits": task = import("@/features/habits"); break;
+    case "study": task = import("@/features/study"); break;
+    case "history": task = import("@/features/history"); break;
+    case "settings": task = import("@/features/settings"); break;
+    default: return;
+  }
+  void task.catch(() => { /* The next navigation can retry the chunk. */ });
+}
 import { Dialog } from "./ui/dialog";
 import { ConfirmDelete } from "./ui/alert-dialog";
 const nav = [
@@ -122,10 +136,44 @@ export function Workspace() {
       live = false;
     };
   }, [load]);
+  // Don't re-render the entire workspace every 30 seconds when the day has
+  // not changed. The Focus timer owns its own once-a-second clock.
   useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 30000);
-    return () => clearInterval(id);
-  }, []);
+    const tz = data?.profile.timezone ?? "Asia/Ho_Chi_Minh";
+    const checkDay = () => setNow((previous) => {
+      const current = new Date();
+      return localDate(previous, tz) === localDate(current, tz) ? previous : current;
+    });
+    const id = setInterval(checkDay, 30000);
+    const onVisible = () => { if (!document.hidden) checkDay(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [data?.profile.timezone]);
+  // Next/Link prefetch would run a server auth check for every link visible in
+  // the sidebar; instead preload the JS chunks directly once we're idle.
+  useEffect(() => {
+    if (!data) return;
+    let idleId: number | null = null;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    const preload = () => {
+      preloadFeature("habits");
+      preloadFeature("study");
+      preloadFeature("history");
+      preloadFeature("settings");
+    };
+    if ("requestIdleCallback" in window) {
+      idleId = window.requestIdleCallback(preload, { timeout: 3000 });
+    } else {
+      timeoutId = setTimeout(preload, 1000);
+    }
+    return () => {
+      if (idleId !== null) window.cancelIdleCallback(idleId);
+      if (timeoutId !== null) clearTimeout(timeoutId);
+    };
+  }, [data?.email]);
   useEffect(() => {
     if (!data) return;
     const media = window.matchMedia("(prefers-color-scheme: dark)");
@@ -139,7 +187,7 @@ export function Workspace() {
     media.addEventListener("change", apply);
     return () => media.removeEventListener("change", apply);
   }, [data]);
-  const mutate = async (type: string, payload: unknown) => {
+  const mutate = useCallback(async (type: string, payload: unknown) => {
     if (busyRef.current) return false;
     busyRef.current = true;
     setBusy(true);
@@ -175,17 +223,17 @@ export function Workspace() {
       busyRef.current = false;
       setBusy(false);
     }
-  };
+  }, [load]);
   const today = localDate(now, data?.profile.timezone ?? "Asia/Ho_Chi_Minh");
   const selectedDate = date || today;
-  const askDelete = (
+  const askDelete = useCallback((
     entity: "habits" | "study_sessions" | "habit_logs",
     id: string,
-  ) => setDeleting({ entity, id });
+  ) => setDeleting({ entity, id }), []);
   return (
     <div className={`app-shell ${collapsed ? "collapsed" : ""}`}>
       <aside className={`sidebar ${mobile ? "mobile-open" : ""}`}>
-        <Link href="/dashboard" className="brand" onClick={(event) => navigate(event, "/dashboard")}>
+        <Link href="/dashboard" prefetch={false} className="brand" onClick={(event) => navigate(event, "/dashboard")}>
           <span className="brand-mark">
             <BookOpen size={22} />
           </span>
@@ -209,6 +257,10 @@ export function Workspace() {
           {nav.map((n) => (
             <Link
               href={`/${n.id}`}
+              prefetch={false}
+              onMouseEnter={() => preloadFeature(n.id)}
+              onFocus={() => preloadFeature(n.id)}
+              onTouchStart={() => preloadFeature(n.id)}
               key={n.id}
               title={n.name}
               className={section === n.id ? "active" : ""}
@@ -232,6 +284,10 @@ export function Workspace() {
           </div>
           <Link
             href="/settings"
+            prefetch={false}
+            onMouseEnter={() => preloadFeature("settings")}
+            onFocus={() => preloadFeature("settings")}
+            onTouchStart={() => preloadFeature("settings")}
             className={`settings-link ${section === "settings" ? "active" : ""}`}
             onClick={(event) => navigate(event, "/settings")}
           >
@@ -411,7 +467,7 @@ export function Workspace() {
           )}
           <footer className="workspace-footer">
             <span>
-              StudyOS <span>·</span> A little progress goes a long way.
+              StudyOS <span>·</span> Speed v2 <span>·</span> A little progress goes a long way.
             </span>
             <span>{data?.profile.timezone ?? "Asia/Ho_Chi_Minh"}</span>
           </footer>

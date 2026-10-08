@@ -1,20 +1,27 @@
 "use client";
-import { useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, CalendarDays } from "lucide-react";
 import { format, parseISO, getDay } from "date-fns";
 import {
   datesBetween,
   shiftDate,
   minutesOnDate,
-  completionRate,
 } from "@/lib/analytics";
 import type { Dataset } from "@/types/models";
-export function History({ data, today }: { data: Dataset; today: string }) {
+import { studyMinutesByDay, habitCompletionByDay } from "@/lib/analytics-fast";
+export const History = memo(function History({ data, today }: { data: Dataset; today: string }) {
   const [month, setMonth] = useState(today.slice(0, 7));
   const [selected, setSelected] = useState(today);
   const first = `${month}-01`;
   const next = shiftDate(first, 32).slice(0, 7) + "-01";
-  const dates = datesBetween(first, shiftDate(next, -1));
+  const { dates, minutesByDay, completionByDay } = useMemo(() => {
+    const dates = datesBetween(first, shiftDate(next, -1));
+    return {
+      dates,
+      minutesByDay: studyMinutesByDay(data.segments, dates[0], dates[dates.length - 1], data.profile.timezone),
+      completionByDay: habitCompletionByDay(data.habits, data.logs, dates[0], dates[dates.length - 1]),
+    };
+  }, [first, next, data]);
   const offset = (getDay(parseISO(first)) + 6) % 7;
   const logs = data.logs.filter((l) => l.date === selected);
   return (
@@ -56,12 +63,8 @@ export function History({ data, today }: { data: Dataset; today: string }) {
             <span key={`blank${i}`} />
           ))}
           {dates.map((d) => {
-            const minutes = minutesOnDate(
-              data.segments,
-              d,
-              data.profile.timezone,
-            );
-            const habits = completionRate(data.habits, data.logs, d, d);
+            const minutes = minutesByDay.get(d) ?? 0;
+            const habits = completionByDay.get(d) ?? { due: 0, done: 0, rate: 0 };
             return (
               <button
                 key={d}
@@ -83,7 +86,7 @@ export function History({ data, today }: { data: Dataset; today: string }) {
             <h2>{format(parseISO(selected), "EEEE, MMM d")}</h2>
             <p className="muted">
               {Math.round(
-                minutesOnDate(data.segments, selected, data.profile.timezone),
+                minutesByDay.get(selected) ?? minutesOnDate(data.segments, selected, data.profile.timezone),
               )}{" "}
               minutes of study
             </p>
@@ -115,4 +118,4 @@ export function History({ data, today }: { data: Dataset; today: string }) {
       </section>
     </div>
   );
-}
+});

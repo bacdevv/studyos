@@ -47,8 +47,10 @@ async function studyRows(db: Awaited<ReturnType<typeof supabase>>) {
 }
 
 export async function GET() {
+  const started = performance.now();
   try {
     const auth = await authorized();
+    const authorizedAt = performance.now();
     if (!auth) return fail("Please sign in", 401);
     const { db, user } = auth;
     const { error: initError } = await db
@@ -62,9 +64,14 @@ export async function GET() {
       db.from("profiles").select("*").eq("id", user.id).single(),
     ]);
     if (profile.error) throw profile.error;
+    const finished = performance.now();
     return NextResponse.json(
       { habits, logs, ...study, profile: profile.data, email: user.email },
-      { headers: { "Cache-Control": "private, no-store" } },
+      { headers: {
+        "Cache-Control": "private, no-store",
+        "X-StudyOS-Version": "speed-v2",
+        "Server-Timing": `auth;dur=${(authorizedAt - started).toFixed(1)}, data;dur=${(finished - authorizedAt).toFixed(1)}`,
+      } },
     );
   } catch (e) {
     return fail(e instanceof Error ? e.message : "Unable to load your data", 500);

@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { memo, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   AreaChart,
@@ -23,20 +23,20 @@ import {
   progress,
 } from "@/lib/analytics";
 import { Habits, type Mutate } from "./habits";
+import { studyMinutesByDay, habitCompletionByDay, aggregateCompletion } from "@/lib/analytics-fast";
 import { Focus } from "./study";
 import type { Dataset } from "@/types/models";
-export function Stats({ data, today }: { data: Dataset; today: string }) {
-  const todayMinutes = minutesOnDate(
-    data.segments,
-    today,
-    data.profile.timezone,
-  );
-  const weekStart = shiftDate(today, -((getDay(parseISO(today)) + 6) % 7));
-  const week = datesBetween(weekStart, today).reduce(
-    (n, d) => n + minutesOnDate(data.segments, d, data.profile.timezone),
-    0,
-  );
-  const habits = completionRate(data.habits, data.logs, today, today);
+export const Stats = memo(function Stats({ data, today }: { data: Dataset; today: string }) {
+  const { todayMinutes, week, habits, streak } = useMemo(() => {
+    const weekStart = shiftDate(today, -((getDay(parseISO(today)) + 6) % 7));
+    const minutes = studyMinutesByDay(data.segments, weekStart, today, data.profile.timezone);
+    return {
+      todayMinutes: minutes.get(today) ?? 0,
+      week: [...minutes.values()].reduce((sum, value) => sum + value, 0),
+      habits: completionRate(data.habits, data.logs, today, today),
+      streak: studyStreak(data.segments, today, data.profile.timezone),
+    };
+  }, [data, today]);
   return (
     <div className="stats-grid">
       {[
@@ -68,7 +68,7 @@ export function Stats({ data, today }: { data: Dataset; today: string }) {
         },
         {
           title: "Study streak",
-          value: studyStreak(data.segments, today, data.profile.timezone),
+          value: streak,
           unit: "days",
           foot: "One focused minute keeps it going",
           icon: Flame,
@@ -91,8 +91,8 @@ export function Stats({ data, today }: { data: Dataset; today: string }) {
       ))}
     </div>
   );
-}
-export function Trends({
+});
+export const Trends = memo(function Trends({
   data,
   today,
   expanded = false,
@@ -112,23 +112,26 @@ export function Trends({
         : shiftDate(today, -(Number(range) - 1));
   const end = range === "custom" ? customEnd : today;
   const valid = start <= end && datesBetween(start, end).length <= 366;
-  const days = valid ? datesBetween(start, end) : [];
-  const chart = days.map((d) => ({
-    date: format(parseISO(d), "MMM d"),
-    hours: Number(
-      (minutesOnDate(data.segments, d, data.profile.timezone) / 60).toFixed(2),
-    ),
-    completion: completionRate(data.habits, data.logs, d, d).rate,
-  }));
-  const total = chart.reduce((n, d) => n + d.hours, 0);
-  const monthStart = `${today.slice(0, 7)}-01`;
-  const heat = datesBetween(monthStart, today);
-  const rate = completionRate(
-    data.habits,
-    data.logs,
-    start,
-    valid ? end : start,
-  );
+  const { chart, total, heat, heatCompletion, rate } = useMemo(() => {
+    const monthStart = `${today.slice(0, 7)}-01`;
+    const heat = datesBetween(monthStart, today);
+    const days = valid ? datesBetween(start, end) : [];
+    const minutes = studyMinutesByDay(data.segments, start, valid ? end : start, data.profile.timezone);
+    const completion = habitCompletionByDay(data.habits, data.logs, start, valid ? end : start);
+    const heatCompletion = habitCompletionByDay(data.habits, data.logs, monthStart, today);
+    const chart = days.map((d) => ({
+      date: format(parseISO(d), "MMM d"),
+      hours: Number(((minutes.get(d) ?? 0) / 60).toFixed(2)),
+      completion: completion.get(d)?.rate ?? 0,
+    }));
+    return {
+      chart,
+      total: chart.reduce((sum, row) => sum + row.hours, 0),
+      heat,
+      heatCompletion,
+      rate: aggregateCompletion(completion),
+    };
+  }, [data, start, end, valid, today]);
   return (
     <>
       <section className="card trend-card">
@@ -287,7 +290,7 @@ export function Trends({
             </div>
             <div className="heatmap">
               {heat.map((d) => {
-                const score = completionRate(data.habits, data.logs, d, d);
+                const score = heatCompletion.get(d) ?? { due: 0, done: 0, rate: 0 };
                 return (
                   <div
                     key={d}
@@ -318,7 +321,7 @@ export function Trends({
       )}
     </>
   );
-}
+});
 export function Dashboard({
   data,
   today,
