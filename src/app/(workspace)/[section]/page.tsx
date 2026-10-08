@@ -1,5 +1,4 @@
 import { notFound } from "next/navigation";
-import { Workspace } from "@/components/workspace";
 const sections = [
   "dashboard",
   "habits",
@@ -15,5 +14,6 @@ export default async function Page({
 }) {
   const { section } = await params;
   if (!sections.includes(section)) notFound();
-  return <Workspace section={section} />;
+  // The authenticated layout renders the persistent workspace.
+  return null;
 }

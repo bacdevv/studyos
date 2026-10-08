@@ -1,3 +1,5 @@
+> **Lưu ý sau performance patch (2026-10-08):** Kết quả trong tài liệu này thuộc bản MVP trước khi tối ưu. Bản performance patch chưa được kiểm tra lại bằng pnpm/Next production build do không kết nối được npm registry. Hãy xem `PATCH_NOTES.md` để biết các bài kiểm tra mới đã chạy thực tế.
+
 # Validation — 2026-10-08
 
 ## Executed

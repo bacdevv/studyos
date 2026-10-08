@@ -77,3 +77,28 @@ test("authenticated habit and session lifecycle", async ({ page }) => {
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page).toHaveURL("/login");
 });
+
+test("sidebar navigation reuses workspace data without fetching everything", async ({ page }) => {
+  test.skip(
+    !process.env.E2E_EMAIL || !process.env.E2E_PASSWORD,
+    "Requires a confirmed test account and migrated database",
+  );
+  await page.goto("/login");
+  await page.getByLabel("Email address").fill(process.env.E2E_EMAIL!);
+  await page.getByLabel("Password", { exact: true }).fill(process.env.E2E_PASSWORD!);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page).toHaveURL("/dashboard");
+  await expect(page.getByText("All changes saved")).toBeVisible();
+  let fetched = 0;
+  page.on("request", (request) => {
+    if (request.method() === "GET" && new URL(request.url()).pathname === "/api/data") fetched++;
+  });
+  await page.getByRole("link", { name: "Habit tracker" }).click();
+  await expect(page).toHaveURL("/habits");
+  await expect(page.getByRole("heading", { name: "Consistency starts small." })).toBeVisible();
+  await page.getByRole("link", { name: "Study sessions" }).click();
+  await expect(page).toHaveURL("/study");
+  await page.getByRole("link", { name: "Overview" }).click();
+  await expect(page).toHaveURL("/dashboard");
+  expect(fetched).toBe(0);
+});

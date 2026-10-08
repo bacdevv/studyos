@@ -1,7 +1,8 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import { format, parseISO } from "date-fns";
 import {
   BookOpen,
@@ -22,11 +23,16 @@ import { toast } from "sonner";
 import { browserClient } from "@/lib/supabase/browser";
 import { localDate } from "@/lib/analytics";
 import type { Dataset } from "@/types/models";
-import { Dashboard, Stats, Trends } from "@/features/dashboard";
-import { Habits, HabitForm } from "@/features/habits";
-import { Study } from "@/features/study";
-import { Settings } from "@/features/settings";
-import { History } from "@/features/history";
+import { applyMutation, type MutationResponse } from "@/lib/workspace-data";
+import { HabitForm } from "@/features/habits";
+// The larger views (especially charting) load only when first visited.
+const Dashboard = dynamic(() => import("@/features/dashboard").then((m) => m.Dashboard));
+const Stats = dynamic(() => import("@/features/dashboard").then((m) => m.Stats));
+const Trends = dynamic(() => import("@/features/dashboard").then((m) => m.Trends));
+const Habits = dynamic(() => import("@/features/habits").then((m) => m.Habits));
+const Study = dynamic(() => import("@/features/study").then((m) => m.Study));
+const Settings = dynamic(() => import("@/features/settings").then((m) => m.Settings));
+const History = dynamic(() => import("@/features/history").then((m) => m.History));
 import { Dialog } from "./ui/dialog";
 import { ConfirmDelete } from "./ui/alert-dialog";
 const nav = [
@@ -62,8 +68,19 @@ const copy: Record<string, { title: string; description: string }> = {
     description: "Your workspace, your rhythm.",
   },
 };
-export function Workspace({ section }: { section: string }) {
+export function Workspace() {
   const router = useRouter();
+  const pathname = usePathname();
+  const pathSection = pathname.split("/")[1];
+  const section = Object.hasOwn(copy, pathSection) ? pathSection : "dashboard";
+  // Next.js integrates the native History API with usePathname. Switching
+  // between sections therefore needs no network request or layout remount.
+  const navigate = (event: MouseEvent<HTMLAnchorElement>, path: string) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    if (window.location.pathname !== path) window.history.pushState(null, "", path);
+    setMobile(false);
+  };
   const [data, setData] = useState<Dataset | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -135,7 +152,16 @@ export function Workspace({ section }: { section: string }) {
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Unable to save");
-      setData(await load());
+      // The server returns only the confirmed updated record (or study data).
+      // Keep the existing workspace in memory; never refetch all five tables.
+      if (result.refreshRequired) {
+        // Recover after a committed focus RPC if reading fresh rows failed.
+        setData(await load());
+      } else {
+        setData((previous) =>
+          previous ? applyMutation(previous, type, payload, result as MutationResponse) : previous,
+        );
+      }
       setError("");
       toast.success(type === "delete" ? "Record deleted" : "Saved");
       return true;
@@ -159,7 +185,7 @@ export function Workspace({ section }: { section: string }) {
   return (
     <div className={`app-shell ${collapsed ? "collapsed" : ""}`}>
       <aside className={`sidebar ${mobile ? "mobile-open" : ""}`}>
-        <Link href="/dashboard" className="brand">
+        <Link href="/dashboard" className="brand" onClick={(event) => navigate(event, "/dashboard")}>
           <span className="brand-mark">
             <BookOpen size={22} />
           </span>
@@ -187,7 +213,7 @@ export function Workspace({ section }: { section: string }) {
               title={n.name}
               className={section === n.id ? "active" : ""}
               aria-current={section === n.id ? "page" : undefined}
-              onClick={() => setMobile(false)}
+              onClick={(event) => navigate(event, `/${n.id}`)}
             >
               <n.icon size={19} />
               <span>{n.name}</span>
@@ -207,6 +233,7 @@ export function Workspace({ section }: { section: string }) {
           <Link
             href="/settings"
             className={`settings-link ${section === "settings" ? "active" : ""}`}
+            onClick={(event) => navigate(event, "/settings")}
           >
             <SettingsIcon size={19} />
             <span>Settings</span>
@@ -270,12 +297,13 @@ export function Workspace({ section }: { section: string }) {
               </summary>
               <div>
                 <small>{data?.email}</small>
-                <Link href="/settings">Profile & preferences</Link>
+                <Link href="/settings" onClick={(event) => navigate(event, "/settings")}>Profile & preferences</Link>
                 <button
                   onClick={async () => {
                     try {
                       const { error } = await browserClient().auth.signOut();
                       if (error) throw error;
+                      setData(null); // Never retain another account's private data.
                       router.replace("/login");
                       router.refresh();
                     } catch {
